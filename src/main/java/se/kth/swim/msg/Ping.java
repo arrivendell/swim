@@ -23,4 +23,6 @@ package se.kth.swim.msg;
  * @author Alex Ormenisan <aaor@sics.se>
  */
 public class Ping {
+	
+	
 }
