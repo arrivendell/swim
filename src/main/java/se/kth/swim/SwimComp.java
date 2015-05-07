@@ -18,20 +18,29 @@
  */
 package se.kth.swim;
 
+import java.util.HashSet;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
+
+import javassist.bytecode.Descriptor.Iterator;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import se.kth.swim.msg.Status;
 import se.kth.swim.msg.net.NetPing;
 import se.kth.swim.msg.net.NetPong;
 import se.kth.swim.msg.net.NetStatus;
+import se.kth.swim.msg.net.PiggyPong;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Init;
 import se.sics.kompics.Positive;
 import se.sics.kompics.Start;
 import se.sics.kompics.Stop;
+import se.sics.kompics.network.Address;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.CancelTimeout;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
@@ -44,6 +53,10 @@ import se.sics.p2ptoolbox.util.network.NatedAddress;
  */
 public class SwimComp extends ComponentDefinition {
 
+	private static int MAX_LIST = 3;
+	private static int TIME_OUT = 10;
+	private static int PING_MAX = 10;
+	
     private static final Logger log = LoggerFactory.getLogger(SwimComp.class);
     private Positive<Network> network = requires(Network.class);
     private Positive<Timer> timer = requires(Timer.class);
@@ -52,6 +65,11 @@ public class SwimComp extends ComponentDefinition {
     private final Set<NatedAddress> bootstrapNodes;
     private final NatedAddress aggregatorAddress;
 
+    
+    private SortedSet<NodeAndCounter> aliveNodes = new TreeSet<NodeAndCounter>();
+    private SortedSet<NodeAndCounter> suspeNodes =  new TreeSet<NodeAndCounter>();
+    private SortedSet<NodeAndCounter> deadNodes =  new TreeSet<NodeAndCounter>();
+    
     private UUID pingTimeoutId;
     private UUID statusTimeoutId;
 
@@ -107,22 +125,58 @@ public class SwimComp extends ComponentDefinition {
         public void handle(NetPing event) {
             log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
             receivedPings++;
-            
-            trigger(new NetPong(selfAddress, event.getSource()), network);
+            java.util.Iterator<NodeAndCounter> it = aliveNodes.iterator();
+            HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
+            int i= 0;
+            while(it.hasNext() && i<MAX_LIST){
+            	NodeAndCounter address = it.next();
+               	int counterAddress = address.getCounter();
+               	if ( counterAddress < PING_MAX){
+               		setAlive.add(address.getNode());
+                   	aliveNodes.remove(address);
+                   	aliveNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
+                	i++;
+               	}
+               	
+            }
+            setAlive.add(selfAddress);
+            log.info(" sending pong {} ", setAlive.size());
+            trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setAlive,setAlive), network);
+            //trigger(new NetPong(selfAddress, event.getSource()), network);
         }
 
     };
     
-    private Handler<NetPong> handlePong = new Handler<NetPong>() {
+    private Handler<PiggyPong> handlePong = new Handler<PiggyPong>() {
 
         @Override
-        public void handle(NetPong event) {
+        public void handle(PiggyPong event) {
             log.info("{} received pong from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
             receivedPongs++;
+            HashSet<NatedAddress> hs = event.getAliveNodes();
+            java.util.Iterator<NatedAddress> it = hs.iterator();
+            while(it.hasNext()){
+            	log.info("NatedAdress added");
+            	aliveNodes.add(new NodeAndCounter(it.next(), 0));
+            }
+            hs = event.getSuspNodes();
+            it = hs.iterator();
+            while(it.hasNext()){
+            	log.info("NatedAdress added");
+            	suspeNodes.add(new NodeAndCounter(it.next(), 0));
+            }
+            hs = event.getDeadNodes();
+            it = hs.iterator();
+            while(it.hasNext()){
+            	log.info("NatedAdress added");
+            	deadNodes.add(new NodeAndCounter(it.next(), 0));
+            }
+        	log.info("OUT OF PONG {}",hs.size());
         }
 
     };
-
+    
+    
     private Handler<PingTimeout> handlePingTimeout = new Handler<PingTimeout>() {
 
         @Override
