@@ -64,7 +64,9 @@ public class SwimComp extends ComponentDefinition {
 	private static int MAX_LIST = 10;
 	private static int TIME_OUT = 10;
 	private static int PING_MAX = 5;
-	private static int DELAY_PONG = 500000;
+	private static int DELAY_PONG = 1000;
+	private static int LIMIT_CRASH = 1;
+	private int current_limit = 0;
     private static final Logger log = LoggerFactory.getLogger(SwimComp.class);
     private Positive<Network> network = requires(Network.class);
     private Positive<Timer> timer = requires(Timer.class);
@@ -146,7 +148,10 @@ public class SwimComp extends ComponentDefinition {
             log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), nodeSender});
             receivedPings++;
             aliveNodes.add(nodeSender);
+            //update counter to 0
+            recentAliveNodes.remove(new NodeAndCounter(nodeSender, 0));
             recentAliveNodes.add(new NodeAndCounter(nodeSender, 0));
+            
             java.util.Iterator<NodeAndCounter> it = recentAliveNodes.iterator();
             HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
             int i= 0;
@@ -158,7 +163,6 @@ public class SwimComp extends ComponentDefinition {
                    	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
                 	i++;
                	}
-               	
             }
             //We change the recent set by incrementing the counters
             for (NodeAndCounter node : tempNodes){
@@ -182,12 +186,19 @@ public class SwimComp extends ComponentDefinition {
                	}
                	
             }
-            log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
-            if (selfAddress.getId()!=17){
-            	 trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
-                 
+            
+            for (NodeAndCounter node : tempNodes){
+
+                recentSuspectedNodes.remove(node);
+                recentSuspectedNodes.add(node);
             }
-           
+            
+            if (selfAddress.getId() != 17 || current_limit < LIMIT_CRASH){
+
+            log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
+         	 trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
+            }
+
             //trigger(new NetPong(selfAddress, event.getSource()), network);
         }
 
@@ -235,7 +246,7 @@ public class SwimComp extends ComponentDefinition {
                 	//add it to the permanent list
                 	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
                 	log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
-                	aliveNodes.add(temp);
+                	aliveNodes.add(temp); // Add it here to try to ping it after
                 	suspectedNodes.add(temp);
             	}
             	
@@ -259,7 +270,7 @@ public class SwimComp extends ComponentDefinition {
         	int indexRandom = randInt(0,aliveNodes.size()-1);
         	int i = 0;
             for (NatedAddress partnerAddress : aliveNodes) {
-            	if (i == indexRandom) {
+            	if (i == indexRandom && (selfAddress.getId() != 17 || current_limit < LIMIT_CRASH)) {
 	                log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
 	                trigger(new NetPing(selfAddress, partnerAddress), network);
 	                ScheduleTimeout spt = new ScheduleTimeout(DELAY_PONG);
@@ -268,6 +279,7 @@ public class SwimComp extends ComponentDefinition {
 	                pingedNodes.put(sc.getTimeoutId(), partnerAddress) ;
 	                trigger(spt, timer);
 	                i++;
+	            	current_limit++;
 	                break;
             	}
             }

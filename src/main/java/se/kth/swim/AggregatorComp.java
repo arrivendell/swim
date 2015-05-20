@@ -18,8 +18,12 @@
  */
 package se.kth.swim;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import se.kth.swim.msg.net.NetStatus;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
@@ -72,8 +76,16 @@ public class AggregatorComp extends ComponentDefinition {
 
         @Override
         public void handle(NetStatus status) {
+            Set<Integer> setAlive = new HashSet<Integer>() ;
+            for(NatedAddress nat : status.getContent().aliveNodes){
+            	setAlive.add(nat.getId());
+            }
+            Set<Integer> setSuspected = new HashSet<Integer>() ;
+            for(NatedAddress nat : status.getContent().suspectedNodes){
+            	setSuspected.add(nat.getId());
+            }
             log.info("{} status from:{} pings:{} aliveNodes : {} suspected nodes : {}", 
-                    new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, status.getContent().aliveNodes, status.getContent().suspectedNodes});
+                    new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, setAlive, setSuspected});
         }
     };
 
