@@ -13,15 +13,16 @@ public class NodeAndCounter implements Comparable<NodeAndCounter> {
 	}
 	
 	public int compareTo(NodeAndCounter o) {
-        if (counter < o.counter){
+		if(nodeAdress == o.nodeAdress){
+        	return 0;
+        }
+		else if (counter < o.counter){
         	return -1;
         }
         else if (counter > o.counter){
         	return 1;
         }
-        else if(nodeAdress == o.nodeAdress){
-        	return 0;
-        }
+        
         else if (nodeAdress.getId()< o.nodeAdress.getId()){
         	return -1;
         }

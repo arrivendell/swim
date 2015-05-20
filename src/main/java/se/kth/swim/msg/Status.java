@@ -19,13 +19,24 @@
 
 package se.kth.swim.msg;
 
+import java.util.HashSet;
+import java.util.Set;
+
+import se.sics.p2ptoolbox.util.network.NatedAddress;
+
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
 public class Status {
     public int receivedPings;
+    public Set<NatedAddress> aliveNodes ;
+    public Set<NatedAddress> suspectedNodes ;
+    public Set<NatedAddress> deadNodes ;
     
-    public Status(int receivedPings) {
-        this.receivedPings = receivedPings;
-    }
-}
+	public Status(int receivedPings, Set<NatedAddress> aliveNodes, Set<NatedAddress> suspectedNodes, Set<NatedAddress> deadNodes ) {
+	        this.receivedPings = receivedPings;
+	        this.aliveNodes = new HashSet<NatedAddress>(aliveNodes);
+	        this.suspectedNodes = new HashSet<NatedAddress>(suspectedNodes);
+	        this.deadNodes = new HashSet<NatedAddress>(deadNodes);
+	    }
+	}

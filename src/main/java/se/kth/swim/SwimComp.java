@@ -18,7 +18,12 @@
  */
 package se.kth.swim;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.sql.Time;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Random;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -26,6 +31,7 @@ import java.util.UUID;
 
 import javassist.bytecode.Descriptor.Iterator;
 
+import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,8 +50,10 @@ import se.sics.kompics.network.Address;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.CancelTimeout;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timeout;
 import se.sics.kompics.timer.Timer;
+import se.sics.p2ptoolbox.util.network.NatType;
 import se.sics.p2ptoolbox.util.network.NatedAddress;
 
 /**
@@ -53,10 +61,10 @@ import se.sics.p2ptoolbox.util.network.NatedAddress;
  */
 public class SwimComp extends ComponentDefinition {
 
-	private static int MAX_LIST = 3;
+	private static int MAX_LIST = 10;
 	private static int TIME_OUT = 10;
-	private static int PING_MAX = 10;
-	
+	private static int PING_MAX = 5;
+	private static int DELAY_PONG = 500000;
     private static final Logger log = LoggerFactory.getLogger(SwimComp.class);
     private Positive<Network> network = requires(Network.class);
     private Positive<Timer> timer = requires(Timer.class);
@@ -65,16 +73,23 @@ public class SwimComp extends ComponentDefinition {
     private final Set<NatedAddress> bootstrapNodes;
     private final NatedAddress aggregatorAddress;
 
+    private  Set<NatedAddress> aliveNodes ; //start with the bootstraps nodes
+    private  Set<NatedAddress> suspectedNodes= new HashSet<NatedAddress>();
+    private  Set<NatedAddress> deadNodes= new HashSet<NatedAddress>();
     
-    private SortedSet<NodeAndCounter> aliveNodes = new TreeSet<NodeAndCounter>();
-    private SortedSet<NodeAndCounter> suspeNodes =  new TreeSet<NodeAndCounter>();
-    private SortedSet<NodeAndCounter> deadNodes =  new TreeSet<NodeAndCounter>();
+    private SortedSet<NodeAndCounter> recentAliveNodes = new TreeSet<NodeAndCounter>();
+    private SortedSet<NodeAndCounter> recentSuspectedNodes =  new TreeSet<NodeAndCounter>();
+    private SortedSet<NodeAndCounter> recentDeadNodes =  new TreeSet<NodeAndCounter>();
+    private HashMap<UUID,NatedAddress> pingedNodes = new HashMap<UUID,NatedAddress>();
     
     private UUID pingTimeoutId;
     private UUID statusTimeoutId;
 
     private int receivedPings = 0;
     private int receivedPongs = 0;
+    
+
+    private Random rand = new Random();
 
 
     public SwimComp(SwimInit init) {
@@ -82,12 +97,14 @@ public class SwimComp extends ComponentDefinition {
         log.info("{} initiating...", selfAddress);
         this.bootstrapNodes = init.bootstrapNodes;
         this.aggregatorAddress = init.aggregatorAddress;
-
+        this.aliveNodes = new HashSet<NatedAddress>(this.bootstrapNodes);
+        
         subscribe(handleStart, control);
         subscribe(handleStop, control);
         subscribe(handlePing, network);
         subscribe(handlePong, network);
         subscribe(handlePingTimeout, timer);
+        subscribe(handlePongTimeout, timer);
         subscribe(handleStatusTimeout, timer);
     }
 
@@ -123,9 +140,14 @@ public class SwimComp extends ComponentDefinition {
 
         @Override
         public void handle(NetPing event) {
-            log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
+        	NatedAddress nodeSender = event.getHeader().getSource();
+            SortedSet<NodeAndCounter> tempNodes = new TreeSet<NodeAndCounter>();
+            
+            log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), nodeSender});
             receivedPings++;
-            java.util.Iterator<NodeAndCounter> it = aliveNodes.iterator();
+            aliveNodes.add(nodeSender);
+            recentAliveNodes.add(new NodeAndCounter(nodeSender, 0));
+            java.util.Iterator<NodeAndCounter> it = recentAliveNodes.iterator();
             HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
             int i= 0;
             while(it.hasNext() && i<MAX_LIST){
@@ -133,15 +155,39 @@ public class SwimComp extends ComponentDefinition {
                	int counterAddress = address.getCounter();
                	if ( counterAddress < PING_MAX){
                		setAlive.add(address.getNode());
-                   	aliveNodes.remove(address);
-                   	aliveNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
+                   	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
                 	i++;
                	}
                	
             }
+            //We change the recent set by incrementing the counters
+            for (NodeAndCounter node : tempNodes){
+
+                recentAliveNodes.remove(node);
+                recentAliveNodes.add(node);
+            }
             setAlive.add(selfAddress);
-            log.info(" sending pong {} ", setAlive.size());
-            trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setAlive,setAlive), network);
+            
+            it = recentSuspectedNodes.iterator();
+            HashSet<NatedAddress> setSuspect = new HashSet<NatedAddress>();
+            i= 0;
+            tempNodes.clear();
+            while(it.hasNext() && i<MAX_LIST){
+            	NodeAndCounter address = it.next();
+               	int counterAddress = address.getCounter();
+               	if ( counterAddress < PING_MAX){
+               		setSuspect.add(address.getNode());
+                   	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
+                	i++;
+               	}
+               	
+            }
+            log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
+            if (selfAddress.getId()!=17){
+            	 trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
+                 
+            }
+           
             //trigger(new NetPong(selfAddress, event.getSource()), network);
         }
 
@@ -153,25 +199,54 @@ public class SwimComp extends ComponentDefinition {
         public void handle(PiggyPong event) {
             log.info("{} received pong from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
             receivedPongs++;
+            UUID uuidToRemove;
+            //if receives a  pong, remove node from pingedList
+            for(UUID uuid : pingedNodes.keySet()){
+            	if (pingedNodes.get(uuid).getId() == event.getSource().getId()){
+            		pingedNodes.remove(uuid);
+            		cancelPingTimeout(uuid);
+            	}
+            }
+        	suspectedNodes.remove(event.getSource());
+        	recentSuspectedNodes.remove(new NodeAndCounter(event.getHeader().getSource(),0));
+        	
             HashSet<NatedAddress> hs = event.getAliveNodes();
             java.util.Iterator<NatedAddress> it = hs.iterator();
             while(it.hasNext()){
-            	log.info("NatedAdress added");
-            	aliveNodes.add(new NodeAndCounter(it.next(), 0));
+            	NatedAddress temp = it.next();
+            	if (temp != selfAddress){
+            		recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+                	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
+                	recentAliveNodes.add(new NodeAndCounter(temp, 0));
+                	//Can start propagate alive message
+                	aliveNodes.add(temp);
+            	}
+            	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
+            	suspectedNodes.remove(temp);
             }
             hs = event.getSuspNodes();
             it = hs.iterator();
             while(it.hasNext()){
-            	log.info("NatedAdress added");
-            	suspeNodes.add(new NodeAndCounter(it.next(), 0));
+            	NatedAddress temp = it.next();
+            	if (temp != selfAddress){
+            		//add it to the "fresh" list
+                	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
+                	recentSuspectedNodes.add(new NodeAndCounter(temp, 0));
+                	//add it to the permanent list
+                	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+                	log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
+                	aliveNodes.add(temp);
+                	suspectedNodes.add(temp);
+            	}
+            	
             }
             hs = event.getDeadNodes();
             it = hs.iterator();
             while(it.hasNext()){
-            	log.info("NatedAdress added");
-            	deadNodes.add(new NodeAndCounter(it.next(), 0));
+            	NatedAddress temp = it.next();
+            	recentDeadNodes.add(new NodeAndCounter(temp, 0));
+            	//recentAliveNodes.remove(new NodeAndCounter(temp, 3));
             }
-        	log.info("OUT OF PONG {}",hs.size());
         }
 
     };
@@ -181,10 +256,33 @@ public class SwimComp extends ComponentDefinition {
 
         @Override
         public void handle(PingTimeout event) {
-            for (NatedAddress partnerAddress : bootstrapNodes) {
-                log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
-                trigger(new NetPing(selfAddress, partnerAddress), network);
+        	int indexRandom = randInt(0,aliveNodes.size()-1);
+        	int i = 0;
+            for (NatedAddress partnerAddress : aliveNodes) {
+            	if (i == indexRandom) {
+	                log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
+	                trigger(new NetPing(selfAddress, partnerAddress), network);
+	                ScheduleTimeout spt = new ScheduleTimeout(DELAY_PONG);
+	                PongTimeout sc = new PongTimeout(spt);
+	                spt.setTimeoutEvent(sc);
+	                pingedNodes.put(sc.getTimeoutId(), partnerAddress) ;
+	                trigger(spt, timer);
+	                i++;
+	                break;
+            	}
             }
+        }
+
+    };
+    
+    private Handler<PongTimeout> handlePongTimeout = new Handler<PongTimeout>() {
+
+        @Override
+        public void handle(PongTimeout event) {
+            recentSuspectedNodes.add(new NodeAndCounter(pingedNodes.get(event.getTimeoutId()), 0));
+            suspectedNodes.add(pingedNodes.get(event.getTimeoutId()));
+            log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), pingedNodes.get(event.getTimeoutId()).getId()});
+            pingedNodes.remove(event.getTimeoutId());
         }
 
     };
@@ -194,7 +292,7 @@ public class SwimComp extends ComponentDefinition {
         @Override
         public void handle(StatusTimeout event) {
             log.info("{} sending status to aggregator:{}", new Object[]{selfAddress.getId(), aggregatorAddress});
-            trigger(new NetStatus(selfAddress, aggregatorAddress, new Status(receivedPings)), network);
+            trigger(new NetStatus(selfAddress, aggregatorAddress, new Status(receivedPings, aliveNodes, suspectedNodes, deadNodes)), network);
         }
 
     };
@@ -212,6 +310,12 @@ public class SwimComp extends ComponentDefinition {
         trigger(cpt, timer);
         pingTimeoutId = null;
     }
+    
+    private void cancelPingTimeout(UUID uuid) {
+        CancelTimeout cpt = new CancelTimeout(uuid);
+        trigger(cpt, timer);
+    }
+    
 
     private void schedulePeriodicStatus() {
         SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(10000, 10000);
@@ -252,5 +356,20 @@ public class SwimComp extends ComponentDefinition {
         public PingTimeout(SchedulePeriodicTimeout request) {
             super(request);
         }
+    }
+    
+    private static class PongTimeout extends Timeout {
+
+        public PongTimeout(ScheduleTimeout request) {
+            super(request);
+        }
+    }
+    
+    public int randInt(int min, int max) {
+
+
+        int randomNum = rand.nextInt((max - min) + 1) + min;
+
+        return randomNum;
     }
 }

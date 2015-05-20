@@ -31,7 +31,7 @@ public class PiggyPong extends NetMsg<Pong> implements Serializable {
 		}
 		
 	   public PiggyPong(NatedAddress src, NatedAddress dst, HashSet<NatedAddress> aliveNodes, HashSet<NatedAddress>  suspectedNodes, HashSet<NatedAddress>  deadNodes) {
-	        super(src, dst, new Pong("", aliveNodes, aliveNodes, aliveNodes));
+	        super(src, dst, new Pong("", aliveNodes, suspectedNodes, deadNodes));
 	        log.info("IN PIGGY {}",this.getContent().aliveNodes.size());
 	   }
 

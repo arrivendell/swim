@@ -89,12 +89,12 @@ public class SwimScenario {
         Set<Integer> disconnectedNodes;
 
         disconnectedNodes = new HashSet<Integer>();
-        disconnectedNodes.add(10);
+        disconnectedNodes.add(17);
         disconnectedNodesSets.put(1, disconnectedNodes);
 
         disconnectedNodes = new HashSet<Integer>();
-        disconnectedNodes.add(10);
-        disconnectedNodes.add(12);
+        disconnectedNodes.add(17);
+        disconnectedNodes.add(13);
         disconnectedNodesSets.put(2, disconnectedNodes);
     }
 
@@ -236,10 +236,10 @@ public class SwimScenario {
                     }
                 };
 
-                StochasticProcess startPeers = new StochasticProcess() {
+				StochasticProcess startPeers = new StochasticProcess() {
                     {
                         eventInterArrivalTime(constant(1000));
-                        raise(3, startNodeOp, new GenIntSequentialDistribution(new Integer[]{10, 13, 17}));
+                        raise(8, startNodeOp, new GenIntSequentialDistribution(new Integer[]{10, 13, 17, 20, 30,35, 40, 45}));
                     }
                 };
 
@@ -272,10 +272,10 @@ public class SwimScenario {
                 };
 
                 startAggregator.start();
-                startPeers.startAfterTerminationOf(1000, startAggregator);
-//                stopPeers.startAfterTerminationOf(10000, startPeers);
+				startPeers.startAfterTerminationOf(1000, startAggregator);
+//				killPeers.startAfterTerminationOf(10000, startPeers);
 //                deadLinks1.startAfterTerminationOf(10000,startPeers);
-//                disconnectedNodes1.startAfterTerminationOf(10000, startPeers);
+                disconnectedNodes1.startAfterTerminationOf(10000, startPeers);
                 fetchSimulationResult.startAfterTerminationOf(10000, startPeers);
                 terminateAfterTerminationOf(1000, fetchSimulationResult);
 
