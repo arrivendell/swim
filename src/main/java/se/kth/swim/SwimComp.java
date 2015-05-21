@@ -61,9 +61,9 @@ import se.sics.p2ptoolbox.util.network.NatedAddress;
  */
 public class SwimComp extends ComponentDefinition {
 
-	private static int MAX_LIST = 10;
+	private static int MAX_LIST = 100;
 	private static int TIME_OUT = 10;
-	private static int PING_MAX = 5;
+	private static int PING_MAX = 10;
 	private static int DELAY_PONG = 1000;
 	private static int LIMIT_CRASH = 1;
 	private int current_limit = 0;
@@ -193,11 +193,10 @@ public class SwimComp extends ComponentDefinition {
                 recentSuspectedNodes.add(node);
             }
             
-            if (selfAddress.getId() != 17 || current_limit < LIMIT_CRASH){
 
             log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
-         	 trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
-            }
+         	trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
+            
 
             //trigger(new NetPong(selfAddress, event.getSource()), network);
         }
@@ -270,7 +269,7 @@ public class SwimComp extends ComponentDefinition {
         	int indexRandom = randInt(0,aliveNodes.size()-1);
         	int i = 0;
             for (NatedAddress partnerAddress : aliveNodes) {
-            	if (i == indexRandom && (selfAddress.getId() != 17 || current_limit < LIMIT_CRASH)) {
+            	if (i == indexRandom) {
 	                log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
 	                trigger(new NetPing(selfAddress, partnerAddress), network);
 	                ScheduleTimeout spt = new ScheduleTimeout(DELAY_PONG);
@@ -278,10 +277,10 @@ public class SwimComp extends ComponentDefinition {
 	                spt.setTimeoutEvent(sc);
 	                pingedNodes.put(sc.getTimeoutId(), partnerAddress) ;
 	                trigger(spt, timer);
-	                i++;
-	            	current_limit++;
+	                current_limit++;
 	                break;
             	}
+            	i++;
             }
         }
 
@@ -330,7 +329,7 @@ public class SwimComp extends ComponentDefinition {
     
 
     private void schedulePeriodicStatus() {
-        SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(10000, 10000);
+        SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(2000, 2000);
         StatusTimeout sc = new StatusTimeout(spt);
         spt.setTimeoutEvent(sc);
         statusTimeoutId = sc.getTimeoutId();
