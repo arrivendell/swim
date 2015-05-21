@@ -65,6 +65,7 @@ public class SwimComp extends ComponentDefinition {
 	private static int TIME_OUT = 10;
 	private static int PING_MAX = 10;
 	private static int DELAY_PONG = 1000;
+	private static int DELAY_SUSPECTED = 1000;
 	private static int LIMIT_CRASH = 1;
 	private int current_limit = 0;
     private static final Logger log = LoggerFactory.getLogger(SwimComp.class);
@@ -83,6 +84,8 @@ public class SwimComp extends ComponentDefinition {
     private SortedSet<NodeAndCounter> recentSuspectedNodes =  new TreeSet<NodeAndCounter>();
     private SortedSet<NodeAndCounter> recentDeadNodes =  new TreeSet<NodeAndCounter>();
     private HashMap<UUID,NatedAddress> pingedNodes = new HashMap<UUID,NatedAddress>();
+    private HashMap<UUID,NatedAddress> timerToSuspectedNodes = new HashMap<UUID,NatedAddress>();
+
     
     private UUID pingTimeoutId;
     private UUID statusTimeoutId;
@@ -107,6 +110,7 @@ public class SwimComp extends ComponentDefinition {
         subscribe(handlePong, network);
         subscribe(handlePingTimeout, timer);
         subscribe(handlePongTimeout, timer);
+        subscribe(handleSuspectedTimeout, timer);
         subscribe(handleStatusTimeout, timer);
     }
 
@@ -220,6 +224,14 @@ public class SwimComp extends ComponentDefinition {
         	suspectedNodes.remove(event.getSource());
         	recentSuspectedNodes.remove(new NodeAndCounter(event.getHeader().getSource(),0));
         	
+        	//Nabil : c'est ici qu'on cancel le suspectedTimeout        	
+        	for(UUID uuid : timerToSuspectedNodes.keySet()){
+            	if (timerToSuspectedNodes.get(uuid).getId() == event.getSource().getId()){
+            		timerToSuspectedNodes.remove(uuid);
+            		cancelSuspectedTimeout(uuid);
+            	}
+            }
+        	
             HashSet<NatedAddress> hs = event.getAliveNodes();
             java.util.Iterator<NatedAddress> it = hs.iterator();
             while(it.hasNext()){
@@ -294,6 +306,28 @@ public class SwimComp extends ComponentDefinition {
             suspectedNodes.add(pingedNodes.get(event.getTimeoutId()));
             log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), pingedNodes.get(event.getTimeoutId()).getId()});
             pingedNodes.remove(event.getTimeoutId());
+            
+            //Nabil : Juste après avoir ajouté le noeud aux suspects, on lance un timeout (sur selfAddress??)
+            ScheduleTimeout spt = new ScheduleTimeout(DELAY_SUSPECTED);
+            SuspectedTimeout sc = new SuspectedTimeout(spt);
+            spt.setTimeoutEvent(sc);
+            timerToSuspectedNodes.put(sc.getTimeoutId(), selfAddress) ;
+            trigger(spt, timer);
+        }
+
+    };
+    
+    private Handler<SuspectedTimeout> handleSuspectedTimeout = new Handler<SuspectedTimeout>() {
+
+        @Override
+        public void handle(SuspectedTimeout event) {
+        	//Nabil : on se remove des nodes alive.
+        	aliveNodes.remove(selfAddress);
+        	//Nabil : on s'ajoute dans recentDead, dead, on log et on arrête de la timer.
+            recentDeadNodes.add(new NodeAndCounter(timerToSuspectedNodes.get(event.getTimeoutId()), 0));
+            deadNodes.add(timerToSuspectedNodes.get(event.getTimeoutId()));
+            log.info("{} dead node:{}", new Object[]{selfAddress.getId(), timerToSuspectedNodes.get(event.getTimeoutId()).getId()});
+            timerToSuspectedNodes.remove(event.getTimeoutId());
         }
 
     };
@@ -323,6 +357,11 @@ public class SwimComp extends ComponentDefinition {
     }
     
     private void cancelPingTimeout(UUID uuid) {
+        CancelTimeout cpt = new CancelTimeout(uuid);
+        trigger(cpt, timer);
+    }
+    
+    private void cancelSuspectedTimeout(UUID uuid) {
         CancelTimeout cpt = new CancelTimeout(uuid);
         trigger(cpt, timer);
     }
@@ -372,6 +411,13 @@ public class SwimComp extends ComponentDefinition {
     private static class PongTimeout extends Timeout {
 
         public PongTimeout(ScheduleTimeout request) {
+            super(request);
+        }
+    }
+    
+    private static class SuspectedTimeout extends Timeout {
+
+        public SuspectedTimeout(ScheduleTimeout request) {
             super(request);
         }
     }
