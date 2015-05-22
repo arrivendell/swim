@@ -29,11 +29,15 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.UUID;
 
+import javax.imageio.stream.IIOByteBuffer;
+
 import javassist.bytecode.Descriptor.Iterator;
 
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.base.CaseFormat;
 
 import se.kth.swim.msg.Status;
 import se.kth.swim.msg.net.NetPing;
@@ -66,7 +70,9 @@ public class SwimComp extends ComponentDefinition {
 	private static int PING_MAX = 10;
 	private static int DELAY_PONG = 1000;
 	private static int DELAY_SUSPECTED = 1000;
-	private static int LIMIT_CRASH = 1;
+	private enum enumStatus {ALIVE, SUSPECT, DEAD;};
+	
+	
 	private int current_limit = 0;
     private static final Logger log = LoggerFactory.getLogger(SwimComp.class);
     private Positive<Network> network = requires(Network.class);
@@ -147,66 +153,32 @@ public class SwimComp extends ComponentDefinition {
         @Override
         public void handle(NetPing event) {
         	NatedAddress nodeSender = event.getHeader().getSource();
-            SortedSet<NodeAndCounter> tempNodes = new TreeSet<NodeAndCounter>();
-            
+           
             log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), nodeSender});
             receivedPings++;
             aliveNodes.add(nodeSender);
-            //update counter to 0
+            //update counter to 0 for sender
             recentAliveNodes.remove(new NodeAndCounter(nodeSender, 0));
             recentAliveNodes.add(new NodeAndCounter(nodeSender, 0));
-            
+            //Get a number of updates to send
             java.util.Iterator<NodeAndCounter> it = recentAliveNodes.iterator();
-            HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
-            int i= 0;
-            while(it.hasNext() && i<MAX_LIST){
-            	NodeAndCounter address = it.next();
-               	int counterAddress = address.getCounter();
-               	if ( counterAddress < PING_MAX){
-               		setAlive.add(address.getNode());
-                   	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
-                	i++;
-               	}
-            }
-            //We change the recent set by incrementing the counters
-            for (NodeAndCounter node : tempNodes){
-
-                recentAliveNodes.remove(node);
-                recentAliveNodes.add(node);
-            }
+            HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>(constructSet(it, recentAliveNodes));
             setAlive.add(selfAddress);
             
             it = recentSuspectedNodes.iterator();
-            HashSet<NatedAddress> setSuspect = new HashSet<NatedAddress>();
-            i= 0;
-            tempNodes.clear();
-            while(it.hasNext() && i<MAX_LIST){
-            	NodeAndCounter address = it.next();
-               	int counterAddress = address.getCounter();
-               	if ( counterAddress < PING_MAX){
-               		setSuspect.add(address.getNode());
-                   	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
-                	i++;
-               	}
-               	
-            }
+            HashSet<NatedAddress> setSuspect = new HashSet<NatedAddress>(constructSet(it,recentSuspectedNodes));
+                        
+            it = recentDeadNodes.iterator();
+            HashSet<NatedAddress> setDead = new HashSet<NatedAddress>(constructSet(it,recentDeadNodes));
             
-            for (NodeAndCounter node : tempNodes){
-
-                recentSuspectedNodes.remove(node);
-                recentSuspectedNodes.add(node);
-            }
-            
-
             log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
-         	trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect,new HashSet<NatedAddress>()), network);
+         	trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect, setDead), network);
             
-
-            //trigger(new NetPong(selfAddress, event.getSource()), network);
         }
 
     };
     
+
     private Handler<PiggyPong> handlePong = new Handler<PiggyPong>() {
 
         @Override
@@ -215,60 +187,11 @@ public class SwimComp extends ComponentDefinition {
             receivedPongs++;
             UUID uuidToRemove;
             //if receives a  pong, remove node from pingedList
-            for(UUID uuid : pingedNodes.keySet()){
-            	if (pingedNodes.get(uuid).getId() == event.getSource().getId()){
-            		pingedNodes.remove(uuid);
-            		cancelPingTimeout(uuid);
-            	}
-            }
+            stopTimer(pingedNodes, event.getSource().getId());
+            mergeUpdateLists(event.getAliveNodes(), event.getSuspNodes(), event.getDeadNodes());
         	suspectedNodes.remove(event.getSource());
         	recentSuspectedNodes.remove(new NodeAndCounter(event.getHeader().getSource(),0));
-        	
-        	//Nabil : c'est ici qu'on cancel le suspectedTimeout        	
-        	for(UUID uuid : timerToSuspectedNodes.keySet()){
-            	if (timerToSuspectedNodes.get(uuid).getId() == event.getSource().getId()){
-            		timerToSuspectedNodes.remove(uuid);
-            		cancelSuspectedTimeout(uuid);
-            	}
-            }
-        	
-            HashSet<NatedAddress> hs = event.getAliveNodes();
-            java.util.Iterator<NatedAddress> it = hs.iterator();
-            while(it.hasNext()){
-            	NatedAddress temp = it.next();
-            	if (temp != selfAddress){
-            		recentAliveNodes.remove(new NodeAndCounter(temp, 0));
-                	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
-                	recentAliveNodes.add(new NodeAndCounter(temp, 0));
-                	//Can start propagate alive message
-                	aliveNodes.add(temp);
-            	}
-            	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
-            	suspectedNodes.remove(temp);
-            }
-            hs = event.getSuspNodes();
-            it = hs.iterator();
-            while(it.hasNext()){
-            	NatedAddress temp = it.next();
-            	if (temp != selfAddress){
-            		//add it to the "fresh" list
-                	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
-                	recentSuspectedNodes.add(new NodeAndCounter(temp, 0));
-                	//add it to the permanent list
-                	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
-                	log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
-                	aliveNodes.add(temp); // Add it here to try to ping it after
-                	suspectedNodes.add(temp);
-            	}
-            	
-            }
-            hs = event.getDeadNodes();
-            it = hs.iterator();
-            while(it.hasNext()){
-            	NatedAddress temp = it.next();
-            	recentDeadNodes.add(new NodeAndCounter(temp, 0));
-            	//recentAliveNodes.remove(new NodeAndCounter(temp, 3));
-            }
+        	           
         }
 
     };
@@ -284,12 +207,7 @@ public class SwimComp extends ComponentDefinition {
             	if (i == indexRandom) {
 	                log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
 	                trigger(new NetPing(selfAddress, partnerAddress), network);
-	                ScheduleTimeout spt = new ScheduleTimeout(DELAY_PONG);
-	                PongTimeout sc = new PongTimeout(spt);
-	                spt.setTimeoutEvent(sc);
-	                pingedNodes.put(sc.getTimeoutId(), partnerAddress) ;
-	                trigger(spt, timer);
-	                current_limit++;
+	                launchTimeOutPing(partnerAddress);
 	                break;
             	}
             	i++;
@@ -302,31 +220,51 @@ public class SwimComp extends ComponentDefinition {
 
         @Override
         public void handle(PongTimeout event) {
-            recentSuspectedNodes.add(new NodeAndCounter(pingedNodes.get(event.getTimeoutId()), 0));
-            suspectedNodes.add(pingedNodes.get(event.getTimeoutId()));
-            log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), pingedNodes.get(event.getTimeoutId()).getId()});
+        	NatedAddress nodeReceived = pingedNodes.get(event.getTimeoutId());
+            recentSuspectedNodes.add(new NodeAndCounter(nodeReceived, 0));
+            suspectedNodes.add(nodeReceived);
+            log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), nodeReceived.getId()});
             pingedNodes.remove(event.getTimeoutId());
             
             //Nabil : Juste après avoir ajouté le noeud aux suspects, on lance un timeout (sur selfAddress??)
-            ScheduleTimeout spt = new ScheduleTimeout(DELAY_SUSPECTED);
-            SuspectedTimeout sc = new SuspectedTimeout(spt);
-            spt.setTimeoutEvent(sc);
-            timerToSuspectedNodes.put(sc.getTimeoutId(), selfAddress) ;
-            trigger(spt, timer);
+            launchTimeOutSuspect(nodeReceived);
         }
 
     };
-    
+    private void launchTimeOutSuspect(NatedAddress node){
+    	ScheduleTimeout spt = new ScheduleTimeout(DELAY_SUSPECTED);
+        SuspectedTimeout sc = new SuspectedTimeout(spt);
+        spt.setTimeoutEvent(sc);
+        timerToSuspectedNodes.put(sc.getTimeoutId(), node) ;
+        trigger(spt, timer);
+    }
+    private void launchTimeOutPing(NatedAddress node){
+    	 ScheduleTimeout spt = new ScheduleTimeout(DELAY_PONG);
+         PongTimeout sc = new PongTimeout(spt);
+         spt.setTimeoutEvent(sc);
+         pingedNodes.put(sc.getTimeoutId(), node) ;
+         trigger(spt, timer);
+    }
     private Handler<SuspectedTimeout> handleSuspectedTimeout = new Handler<SuspectedTimeout>() {
 
         @Override
         public void handle(SuspectedTimeout event) {
-        	//Nabil : on se remove des nodes alive.
-        	aliveNodes.remove(selfAddress);
-        	//Nabil : on s'ajoute dans recentDead, dead, on log et on arrête de la timer.
-            recentDeadNodes.add(new NodeAndCounter(timerToSuspectedNodes.get(event.getTimeoutId()), 0));
-            deadNodes.add(timerToSuspectedNodes.get(event.getTimeoutId()));
-            log.info("{} dead node:{}", new Object[]{selfAddress.getId(), timerToSuspectedNodes.get(event.getTimeoutId()).getId()});
+        	NatedAddress nodeTimedOut = timerToSuspectedNodes.get(event.getTimeoutId());
+        	for ( UUID uuid : pingedNodes.keySet()){
+           		if (pingedNodes.get(uuid).getId() == nodeTimedOut.getId()){
+       				pingedNodes.remove(uuid);
+               		cancelSuspectedTimeout(uuid);
+               		break;
+           		}
+           	}
+        	recentAliveNodes.remove(new NodeAndCounter(nodeTimedOut, 0));
+        	aliveNodes.remove(nodeTimedOut);
+        	recentSuspectedNodes.remove(new NodeAndCounter(nodeTimedOut, 0));
+        	suspectedNodes.remove(nodeTimedOut);
+        	
+            recentDeadNodes.add(new NodeAndCounter(nodeTimedOut, 0));
+            deadNodes.add(nodeTimedOut);
+            log.info("{} dead node:{}", new Object[]{selfAddress.getId(), nodeTimedOut.getId()});
             timerToSuspectedNodes.remove(event.getTimeoutId());
         }
 
@@ -341,6 +279,44 @@ public class SwimComp extends ComponentDefinition {
         }
 
     };
+    
+    private HashSet<NatedAddress> constructSet(java.util.Iterator<NodeAndCounter> it,  SortedSet<NodeAndCounter> recent ){
+    	SortedSet<NodeAndCounter> tempNodes = new TreeSet<NodeAndCounter>();
+    	HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
+        int i= 0;
+        while(it.hasNext() && i<MAX_LIST){
+        	NodeAndCounter address = it.next();
+           	int counterAddress = address.getCounter();
+           	if ( counterAddress < PING_MAX){
+           		setAlive.add(address.getNode());
+               	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
+            	i++;
+           	}
+        }
+        //We change the recent set by incrementing the counters
+        for (NodeAndCounter node : tempNodes){
+        	recent.remove(node);
+        	recent.add(node);
+        }
+        return setAlive;
+    }
+    
+    private void updateRecentSet(enumStatus status, NodeAndCounter node){
+    	switch(status) {
+    		case ALIVE :
+    			recentAliveNodes.remove(node);
+    			recentAliveNodes.add(node);
+    			break;
+    		case SUSPECT :
+    			recentSuspectedNodes.remove(node);
+    			recentSuspectedNodes.add(node);
+    			break;
+    		case DEAD :
+    			recentDeadNodes.remove(node);
+    			recentDeadNodes.add(node);
+    			break;
+    	}
+    }
 
     private void schedulePeriodicPing() {
         SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(1000, 1000);
@@ -381,6 +357,68 @@ public class SwimComp extends ComponentDefinition {
         statusTimeoutId = null;
     }
 
+    
+    private void mergeUpdateLists(HashSet<NatedAddress> newAlive, HashSet<NatedAddress> newSuspect, HashSet<NatedAddress> newDead){
+    	
+        java.util.Iterator<NatedAddress> it = newAlive.iterator();
+        while(it.hasNext()){
+        	NatedAddress temp = it.next();
+        	if (temp != selfAddress){
+        		recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+            	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
+            	recentAliveNodes.add(new NodeAndCounter(temp, 0));
+            	//Can start propagate alive message
+            	aliveNodes.add(temp);
+        	}
+        	if(recentSuspectedNodes.remove(new NodeAndCounter(temp, 0))){
+        		stopTimer(timerToSuspectedNodes, temp.getId());
+        	}
+        	suspectedNodes.remove(temp);
+        }
+        
+        it = newSuspect.iterator();
+        while(it.hasNext()){
+        	NatedAddress temp = it.next();
+        	if (temp != selfAddress){
+        		//add it to the "fresh" list
+            	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
+            	recentSuspectedNodes.add(new NodeAndCounter(temp, 0));
+            	launchTimeOutSuspect(temp);
+            	//add it to the permanent list
+            	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+            	log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
+            	aliveNodes.add(temp); // Add it here to try to ping it after
+            	suspectedNodes.add(temp);
+        	}
+        	
+        }
+        
+        it = newDead.iterator();
+        while(it.hasNext()){
+        	NatedAddress temp = it.next();
+        	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+        	aliveNodes.remove(temp);
+        	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
+
+        	if(suspectedNodes.remove(temp)){
+        		stopTimer(timerToSuspectedNodes, temp.getId());
+        		stopTimer(pingedNodes, temp.getId());
+        	}
+        	recentDeadNodes.remove(new NodeAndCounter(temp, 0));
+        	recentDeadNodes.add(new NodeAndCounter(temp, 0));
+        	deadNodes.add(temp);
+        	//recentAliveNodes.remove(new NodeAndCounter(temp, 3));
+        }
+    }
+    
+    private void stopTimer(HashMap<UUID, NatedAddress> mapTimer, int idNode){
+    	for(UUID uuid : mapTimer.keySet()){
+        	if (mapTimer.get(uuid).getId() == idNode){
+        		mapTimer.remove(uuid);
+        		cancelPingTimeout(uuid);
+        	}
+        }
+    }
     public static class SwimInit extends Init<SwimComp> {
 
         public final NatedAddress selfAddress;
