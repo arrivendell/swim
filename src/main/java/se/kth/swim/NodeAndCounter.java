@@ -1,7 +1,10 @@
 package se.kth.swim;
 
 import se.sics.p2ptoolbox.util.network.NatedAddress;
-import java.lang.Comparable;;
+
+import java.lang.Comparable;
+
+import com.google.common.base.MoreObjects.ToStringHelper;
 
 public class NodeAndCounter implements Comparable<NodeAndCounter> {
 	private NatedAddress nodeAdress;
@@ -39,6 +42,12 @@ public class NodeAndCounter implements Comparable<NodeAndCounter> {
 
 	public int getCounter(){
 		return counter;
+	}
+	
+	@Override
+	public String toString() {
+		// TODO Auto-generated method stub
+		return nodeAdress.getId().toString();
 	}
 	
 }

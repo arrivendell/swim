@@ -19,10 +19,18 @@
 
 package se.kth.swim.msg;
 
+import se.sics.p2ptoolbox.util.network.NatedAddress;
+
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
 public class Ping {
+
 	
+	public NatedAddress nodeToPing ;
+	
+	public Ping(NatedAddress topPingNode){
+		nodeToPing = topPingNode;
+	}
 	
 }

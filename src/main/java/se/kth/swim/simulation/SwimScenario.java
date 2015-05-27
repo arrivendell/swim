@@ -18,13 +18,17 @@
  */
 package se.kth.swim.simulation;
 
+import java.awt.List;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
 import org.javatuples.Pair;
+
 import se.kth.swim.AggregatorComp;
 import se.kth.swim.HostComp;
 import se.sics.kompics.network.Address;
@@ -90,7 +94,7 @@ public class SwimScenario {
 
         disconnectedNodes = new HashSet<Integer>();
         disconnectedNodes.add(17);
-        disconnectedNodes.add(101);
+        disconnectedNodes.add(45);
         disconnectedNodesSets.put(1, disconnectedNodes);
 
         disconnectedNodes = new HashSet<Integer>();
@@ -241,14 +245,19 @@ public class SwimScenario {
 				StochasticProcess startPeers = new StochasticProcess() {
                     {
                         eventInterArrivalTime(constant(1000));
-                        raise(11, startNodeOp, new GenIntSequentialDistribution(new Integer[]{10, 13, 17, 20, 15,35, 43, 45, 99,101,107}));
+                        ArrayList<Integer> listInt = new ArrayList<Integer>();
+                        for(int i =0; i< 20; i++){
+                        	
+                        	listInt.add(i);
+                        }
+                        raise(listInt.size(), startNodeOp, new GenIntSequentialDistribution( listInt.toArray(new Integer[listInt.size()])));
                     }
                 };
 
                 StochasticProcess killPeers = new StochasticProcess() {
                     {
                         eventInterArrivalTime(constant(1000));
-                        raise(3, killNodeOp, new GenIntSequentialDistribution(new Integer[]{13,45,17}));
+                        raise(4, killNodeOp, new GenIntSequentialDistribution(new Integer[]{7,15,19,13}));
                         //raise(1, killNodeOp, new ConstantDistribution(Integer.class, 13));
                     }
                 };
@@ -278,8 +287,8 @@ public class SwimScenario {
 				startPeers.startAfterTerminationOf(1000, startAggregator);
 				killPeers.startAfterTerminationOf(1000, startPeers);
 //                deadLinks1.startAfterTerminationOf(10000,startPeers);
- //               disconnectedNodes1.startAfterTerminationOf(1000, startPeers);
-                fetchSimulationResult.startAfterTerminationOf(10000, killPeers);
+//                disconnectedNodes1.startAfterTerminationOf(1000, startPeers);
+                fetchSimulationResult.startAfterTerminationOf(50000, killPeers);
                 terminateAfterTerminationOf(1000, fetchSimulationResult);
 
             }
