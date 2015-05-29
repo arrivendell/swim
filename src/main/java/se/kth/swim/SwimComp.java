@@ -32,6 +32,7 @@ import java.util.UUID;
 import javax.imageio.stream.IIOByteBuffer;
 
 import javassist.bytecode.Descriptor.Iterator;
+import javassist.bytecode.analysis.ControlFlow.Node;
 
 import org.javatuples.Pair;
 import org.slf4j.Logger;
@@ -90,6 +91,8 @@ public class SwimComp extends ComponentDefinition {
     private  Set<NatedAddress> suspectedNodes= new HashSet<NatedAddress>();
     private  Set<NatedAddress> deadNodes= new HashSet<NatedAddress>();
     
+    private HashMap<NatedAddress, Integer> incarnationMap = new HashMap<NatedAddress, Integer>();
+    
     private SortedSet<NodeAndCounter> recentAliveNodes = new TreeSet<NodeAndCounter>();
     private SortedSet<NodeAndCounter> recentSuspectedNodes =  new TreeSet<NodeAndCounter>();
     private SortedSet<NodeAndCounter> recentDeadNodes =  new TreeSet<NodeAndCounter>();
@@ -117,6 +120,12 @@ public class SwimComp extends ComponentDefinition {
         this.bootstrapNodes = init.bootstrapNodes;
         this.aggregatorAddress = init.aggregatorAddress;
         this.aliveNodes = new HashSet<NatedAddress>(this.bootstrapNodes);
+        for(NatedAddress na : aliveNodes){
+        	System.out.println(na);
+        	incarnationMap.put(na,0);
+        }
+
+    	incarnationMap.put(selfAddress, 0);
         
         subscribe(handleStart, control);
         subscribe(handleStop, control);
@@ -165,21 +174,26 @@ public class SwimComp extends ComponentDefinition {
         	NatedAddress nodeSender = event.getHeader().getSource();
            
             //log.info("{} received ping from:{}", new Object[]{selfAddress.getId(), nodeSender});
-            receivedPings++;
-            aliveNodes.add(nodeSender);
-            //update counter to 0 for sender
-            recentAliveNodes.remove(new NodeAndCounter(nodeSender, 0));
-            recentAliveNodes.add(new NodeAndCounter(nodeSender, 0));
+        	receivedPings++;
+        	if ((!aliveNodes.contains(nodeSender) && !deadNodes.contains(nodeSender)) || (event.getIncarnNbr() > incarnationMap.get(selfAddress))){
+        		aliveNodes.add(nodeSender);
+                //update counter to 0 for sender
+                recentAliveNodes.remove(new NodeAndCounter(nodeSender, 0));
+                recentAliveNodes.add(new NodeAndCounter(nodeSender, 0));
+                incarnationMap.put(nodeSender, event.getIncarnNbr());
+        	}
+        	
+            
             //Get a number of updates to send
             java.util.Iterator<NodeAndCounter> it = recentAliveNodes.iterator();
-            HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>(constructSet(it, recentAliveNodes));
-            setAlive.add(selfAddress);
+            HashSet<NodeAndCounter> setAlive = new HashSet<NodeAndCounter>(constructSet(it, recentAliveNodes));
+            setAlive.add(new NodeAndCounter(selfAddress, incarnationMap.get(selfAddress)));
             
             it = recentSuspectedNodes.iterator();
-            HashSet<NatedAddress> setSuspect = new HashSet<NatedAddress>(constructSet(it,recentSuspectedNodes));
+            HashSet<NodeAndCounter> setSuspect = new HashSet<NodeAndCounter>(constructSet(it,recentSuspectedNodes));
                         
             it = recentDeadNodes.iterator();
-            HashSet<NatedAddress> setDead = new HashSet<NatedAddress>(constructSet(it,recentDeadNodes));
+            HashSet<NodeAndCounter> setDead = new HashSet<NodeAndCounter>(constructSet(it,recentDeadNodes));
             
             //log.info(" {}: sending pong to {} ",selfAddress,  event.getSource());
          	trigger(new PiggyPong(selfAddress, event.getSource(), setAlive, setSuspect, setDead), network);
@@ -193,7 +207,7 @@ public class SwimComp extends ComponentDefinition {
     	public void handle(NetPingReq event){
     		indirectToPingNodes.put(event.getNodeToPing(), event.getSource());
     		 //log.info("{} sending ping for ind ping to partner:{}", new Object[]{selfAddress.getId(), event.getNodeToPing()});
-             trigger(new NetPing(selfAddress, event.getNodeToPing()), network);
+             trigger(new NetPing(selfAddress, event.getNodeToPing(), incarnationMap.get(selfAddress)), network);
     	}
     };
     
@@ -236,7 +250,6 @@ public class SwimComp extends ComponentDefinition {
             receivedPongs++;
             UUID uuidToRemove;
             //if receives a  pong, remove node from pingedList
-            System.out.println("YYYYYYY");
             stopTimer(indirectPingedNodes, event.getContent().nodeRelayed.getId());
             stopTimer(indirectPingedNodes, event.getSource().getId());
             stopTimer(pingedNodes, event.getContent().nodeRelayed.getId());
@@ -259,7 +272,7 @@ public class SwimComp extends ComponentDefinition {
             for (NatedAddress partnerAddress : aliveNodes) {
             	if (i == indexRandom) {
 	                //log.info("{} sending ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
-	                trigger(new NetPing(selfAddress, partnerAddress), network);
+	                trigger(new NetPing(selfAddress, partnerAddress, incarnationMap.get(selfAddress)), network);
 	                launchTimeOutPing(partnerAddress);
 	                break;
             	}
@@ -286,7 +299,7 @@ public class SwimComp extends ComponentDefinition {
                 	if (i == indexRandom) {
                 		itemToRemove = partnerAddress;
                 		//log.info("{} sending indirect ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
-    	                trigger(new NetPingReq(selfAddress, partnerAddress, nodeReceived), network);
+    	                trigger(new NetPingReq(selfAddress, partnerAddress, nodeReceived, incarnationMap.get(selfAddress)), network);
     	                break;
                 	}
                 	i++;
@@ -314,7 +327,7 @@ public class SwimComp extends ComponentDefinition {
         	NatedAddress nodeReceived = indirectPingedNodes.get(event.getTimeoutId());
             recentSuspectedNodes.add(new NodeAndCounter(nodeReceived, 0));
             suspectedNodes.add(nodeReceived);
-          //  //log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), nodeReceived.getId()});
+            log.info("{} suspected node:{}", new Object[]{selfAddress.getId(), nodeReceived.getId()});
             //pingedNodes.remove(event.getTimeoutId());
             indirectPingedNodes.remove(event.getTimeoutId());
             //Nabil : Juste après avoir ajouté le noeud aux suspects, on lance un timeout (sur selfAddress??)
@@ -348,7 +361,7 @@ public class SwimComp extends ComponentDefinition {
         @Override
         public void handle(SuspectedTimeout event) {
         	NatedAddress nodeTimedOut = timerToSuspectedNodes.get(event.getTimeoutId());
-        	log.info("timeout suspect for : {}", nodeTimedOut);
+        	log.info("node {} timeout {} suspect for : {}", new Object[]{selfAddress.getId(), event.getTimeoutId(), nodeTimedOut});
         	for ( UUID uuid : indirectPingedNodes.keySet()){
            		if (indirectPingedNodes.get(uuid).getId() == nodeTimedOut.getId()){
            			//indirectPingedNodes.remove(uuid);
@@ -386,15 +399,15 @@ public class SwimComp extends ComponentDefinition {
 
     };
     
-    private HashSet<NatedAddress> constructSet(java.util.Iterator<NodeAndCounter> it,  SortedSet<NodeAndCounter> recent ){
+    private HashSet<NodeAndCounter> constructSet(java.util.Iterator<NodeAndCounter> it,  SortedSet<NodeAndCounter> recent ){
     	SortedSet<NodeAndCounter> tempNodes = new TreeSet<NodeAndCounter>();
-    	HashSet<NatedAddress> setAlive = new HashSet<NatedAddress>();
+    	HashSet<NodeAndCounter> setAlive = new HashSet<NodeAndCounter>();
         int i= 0;
         while(it.hasNext() && i<MAX_LIST){
         	NodeAndCounter address = it.next();
            	int counterAddress = address.getCounter();
            	if ( counterAddress < PING_MAX){
-           		setAlive.add(address.getNode());
+           		setAlive.add(new NodeAndCounter(address.getNode(),incarnationMap.get(address.getNode())));
                	tempNodes.add(new NodeAndCounter(address.getNode(),counterAddress+1));
             	i++;
            	}
@@ -464,55 +477,90 @@ public class SwimComp extends ComponentDefinition {
     }
 
     
-    private void mergeUpdateLists(HashSet<NatedAddress> newAlive, HashSet<NatedAddress> newSuspect, HashSet<NatedAddress> newDead){
+    private void mergeUpdateLists(HashSet<NodeAndCounter> newAlive, HashSet<NodeAndCounter> newSuspect, HashSet<NodeAndCounter> newDead){
     	
-        java.util.Iterator<NatedAddress> it = newAlive.iterator();
+        java.util.Iterator<NodeAndCounter> it = newAlive.iterator();
         while(it.hasNext()){
-        	NatedAddress temp = it.next();
-        	if (temp != selfAddress && !deadNodes.contains(temp)){
-        		recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+        	NodeAndCounter temp = it.next();
+        	if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
+        		recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
             	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
-            	recentAliveNodes.add(new NodeAndCounter(temp, 0));
+            	recentAliveNodes.add(new NodeAndCounter(temp.getNode(), 0));
             	//Can start propagate alive message
-            	aliveNodes.add(temp);
+            	aliveNodes.add(temp.getNode());
+            	incarnationMap.put(temp.getNode(), temp.getCounter());
         	}
-        	if(recentSuspectedNodes.remove(new NodeAndCounter(temp, 0))){
-        		stopTimer(timerToSuspectedNodes, temp.getId());
+        	else if(aliveNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode())){
+        		if (temp.getNode() != selfAddress && !deadNodes.contains(temp.getNode())){
+            		recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+                	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
+                	recentAliveNodes.add(new NodeAndCounter(temp.getNode(), 0));
+                	//Can start propagate alive message
+                	aliveNodes.add(temp.getNode());
+            	}
+            	if(recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0))){
+            		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+            	}
+            	if(suspectedNodes.remove(temp.getNode())){	
+            		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+            	}
+            	incarnationMap.put(temp.getNode(), temp.getCounter());
         	}
-        	suspectedNodes.remove(temp);
+        	
         }
         
         it = newSuspect.iterator();
         while(it.hasNext()){
-        	NatedAddress temp = it.next();
-        	if (temp != selfAddress &&!deadNodes.contains(temp)){
+        	NodeAndCounter temp = it.next();
+
+        	if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
         		//add it to the "fresh" list
-            	recentSuspectedNodes.remove(new NodeAndCounter(temp, 0));
-            	recentSuspectedNodes.add(new NodeAndCounter(temp, 0));
-            	launchTimeOutSuspect(temp);
+            	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+            	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
+            	launchTimeOutSuspect(temp.getNode());
             	//add it to the permanent list
-            	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
+            	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
             	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
-            	aliveNodes.add(temp); // Add it here to try to ping it after
-            	suspectedNodes.add(temp);
+            	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
+            	suspectedNodes.add(temp.getNode());
+            	incarnationMap.put(temp.getNode(), temp.getCounter());
         	}
+        	else if (suspectedNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode()) || (!suspectedNodes.contains(temp.getNode()) && aliveNodes.contains(temp.getNode()) && temp.getCounter() >= incarnationMap.get(temp.getNode()))){
+        		if (temp.getNode() != selfAddress &&!deadNodes.contains(temp.getNode())){
+            		//add it to the "fresh" list
+                	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+                	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
+                	launchTimeOutSuspect(temp.getNode());
+                	//add it to the permanent list
+                	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+                	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
+                	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
+                	suspectedNodes.add(temp.getNode());
+                	incarnationMap.put(temp.getNode(), temp.getCounter());
+            	}
+        	}
+        	if (temp.getNode() == selfAddress){
+        		incarnationMap.put(selfAddress, incarnationMap.get(selfAddress) + 1);
+        	}
+        	
         	
         }
         
         it = newDead.iterator();
         while(it.hasNext()){
-        	NatedAddress temp = it.next();
-        	recentAliveNodes.remove(new NodeAndCounter(temp, 0));
-        	aliveNodes.remove(temp);
-        	boolean isOldSuspect = suspectedNodes.remove(temp);
-        	if(recentSuspectedNodes.remove(new NodeAndCounter(temp, 0)) || isOldSuspect ){
-        		stopTimer(timerToSuspectedNodes, temp.getId());
-        		stopTimer(pingedNodes, temp.getId());
-        		stopTimer(indirectPingedNodes, temp.getId());
+        	NodeAndCounter temp = it.next();
+        	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+        	aliveNodes.remove(temp.getNode());
+        	boolean isOldSuspect = suspectedNodes.remove(temp.getNode());
+        	if(recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0)) || isOldSuspect ){
+        		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+        		stopTimer(pingedNodes, temp.getNode().getId());
+        		stopTimer(indirectPingedNodes, temp.getNode().getId());
         	}
-        	recentDeadNodes.remove(new NodeAndCounter(temp, 0));
-        	recentDeadNodes.add(new NodeAndCounter(temp, 0));
-        	deadNodes.add(temp);
+        	recentDeadNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+        	recentDeadNodes.add(new NodeAndCounter(temp.getNode(), 0));
+        	deadNodes.add(temp.getNode());
+        	incarnationMap.put(temp.getNode(), temp.getCounter());
         	//recentAliveNodes.remove(new NodeAndCounter(temp, 3));
         }
     }

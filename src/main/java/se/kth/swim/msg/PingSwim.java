@@ -24,8 +24,15 @@ import se.sics.p2ptoolbox.util.network.NatedAddress;
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
-public class Ping {
+public class PingSwim extends Ping{
 
-
+	
+	public NatedAddress nodeToPing ;
+	public int incarnNbr ;
+	
+	public PingSwim(NatedAddress topPingNode, int incarn){
+		nodeToPing = topPingNode;
+		incarnNbr = incarn;
+	}
 	
 }

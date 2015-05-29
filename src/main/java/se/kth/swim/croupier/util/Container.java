@@ -17,15 +17,12 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 
-package se.kth.swim.msg;
-
-import se.sics.p2ptoolbox.util.network.NatedAddress;
+package se.kth.swim.croupier.util;
 
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
-public class Ping {
-
-
-	
+public interface Container<S extends Object, C extends Object> {
+    public S getSource();
+    public C getContent();
 }

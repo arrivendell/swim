@@ -21,11 +21,18 @@ package se.kth.swim;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import se.kth.swim.croupier.CroupierPort;
+import se.kth.swim.croupier.CroupierComp.ShuffleCycle;
 import se.kth.swim.croupier.msg.CroupierSample;
+import se.kth.swim.msg.net.HeartBeatRequest;
+import se.kth.swim.msg.net.HeartBeatResponse;
 import se.kth.swim.msg.net.NetMsg;
+import se.kth.swim.msg.net.NetPing;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Init;
@@ -35,6 +42,10 @@ import se.sics.kompics.Start;
 import se.sics.kompics.Stop;
 import se.sics.kompics.network.Header;
 import se.sics.kompics.network.Network;
+import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
+import se.sics.kompics.timer.Timeout;
+import se.sics.kompics.timer.Timer;
 import se.sics.p2ptoolbox.util.network.NatedAddress;
 import se.sics.p2ptoolbox.util.network.impl.RelayHeader;
 import se.sics.p2ptoolbox.util.network.impl.SourceHeader;
@@ -50,6 +61,13 @@ public class NatTraversalComp extends ComponentDefinition {
     private Positive<Network> network = requires(Network.class);
     private Positive<CroupierPort> croupier = requires(CroupierPort.class);
 
+    private Positive<Timer> timer = requires(Timer.class);
+    private int DELAY_HEARTBEAT = 1500;
+    private int PERIOD_HEARTBEAT = 1500;
+    
+    
+    
+    private UUID heartBeatId ;
     private final NatedAddress selfAddress;
     private final Random rand;
 
@@ -82,6 +100,16 @@ public class NatTraversalComp extends ComponentDefinition {
 
     };
 
+    
+    private void startHeartbeat() {
+     
+        SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(1000,1000);
+        HeartBeatCycle sc = new HeartBeatCycle(spt);
+        spt.setTimeoutEvent(sc);
+        heartBeatId = sc.getTimeoutId();
+        trigger(spt, timer);
+    
+    }
     private Handler<NetMsg<Object>> handleIncomingMsg = new Handler<NetMsg<Object>>() {
 
         @Override
@@ -144,6 +172,38 @@ public class NatTraversalComp extends ComponentDefinition {
 
     };
     
+    private Handler<HeartBeatCycle> handleHeartBeatCycle = new Handler<HeartBeatCycle>() {
+
+        @Override
+        public void handle(HeartBeatCycle event) {
+        	for (NatedAddress parent : selfAddress.getParents()) {
+        			trigger(new HeartBeatRequest(selfAddress, parent), network);
+	               launchTimeOutHeartBeat(parent);
+	                break;
+        	}
+        }
+
+	};
+	
+   private Handler<HeartBeatRequest> handleHeartBeatRequest = new Handler<HeartBeatRequest>() {
+
+        @Override
+        public void handle(HeartBeatRequest event) {
+        	trigger(new HeartBeatResponse(selfAddress, event.getSource()), network);
+        }
+
+	};
+	    
+	 private Handler<HeartBeatResponse> handleHeartBeatResponse = new Handler<HeartBeatResponse>() {
+
+	        @Override
+	        public void handle(HeartBeatResponse event) {
+	        	trigger(new HeartBeatResponse(selfAddress, event.getSource()), network);
+	        }
+
+		};
+    
+
     private Handler handleCroupierSample = new Handler<CroupierSample>() {
         @Override
         public void handle(CroupierSample event) {
@@ -161,7 +221,39 @@ public class NatTraversalComp extends ComponentDefinition {
         }
         return it.next();
     }
+    public class HeartBeatCycle extends Timeout {
 
+        public HeartBeatCycle(SchedulePeriodicTimeout request) {
+            super(request);
+        }
+
+        @Override
+        public String toString() {
+            return "HEARTBEAT_CYCLE";
+        }
+    }
+    
+    public class HeartBeatDelay extends Timeout {
+
+        public HeartBeatDelay(ScheduleTimeout request) {
+            super(request);
+        }
+
+        @Override
+        public String toString() {
+            return "HEARTBEAT_RESPONSE";
+        }
+    }
+    
+    
+    private void launchTimeOutHeartBeat(NatedAddress node){
+    	SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(DELAY_HEARTBEAT, PERIOD_HEARTBEAT);
+        HeartBeatCycle sc = new HeartBeatCycle(spt);
+        spt.setTimeoutEvent(sc);
+        //timerToSuspectedNodes.put(sc.getTimeoutId(), node) ;
+        trigger(spt, timer);
+    }
+    
     public static class NatTraversalInit extends Init<NatTraversalComp> {
 
         public final NatedAddress selfAddress;

@@ -17,15 +17,19 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 
-package se.kth.swim.msg;
+package se.kth.swim.croupier;
 
-import se.sics.p2ptoolbox.util.network.NatedAddress;
+import se.kth.swim.croupier.msg.CroupierSample;
+import se.kth.swim.croupier.msg.CroupierUpdate;
+import se.sics.kompics.PortType;
 
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
-public class Ping {
-
-
-	
+public class CroupierPort extends PortType {
+    {
+        request(CroupierUpdate.View.class);
+        request(CroupierUpdate.Address.class);
+        indication(CroupierSample.class);
+    }
 }

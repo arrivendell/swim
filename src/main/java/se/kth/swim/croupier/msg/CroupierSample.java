@@ -1,8 +1,8 @@
 /*
  * Copyright (C) 2009 Swedish Institute of Computer Science (SICS) Copyright (C)
- * 2009 Royal Institute of Technology (KTH)
+ * Copyright (C) 2009 Royal Institute of Technology (KTH)
  *
- * GVoD is free software; you can redistribute it and/or
+ * Croupier is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
@@ -16,16 +16,29 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
+package se.kth.swim.croupier.msg;
 
-package se.kth.swim.msg;
-
+import java.util.Set;
+import se.kth.swim.croupier.util.Container;
 import se.sics.p2ptoolbox.util.network.NatedAddress;
 
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
-public class Ping {
+public class CroupierSample<C extends Object> implements CroupierMsg.OneWay {
 
+    public final int overlayId;
+    public final Set<Container<NatedAddress, C>> publicSample;
+    public final Set<Container<NatedAddress, C>> privateSample;
+    
+    public CroupierSample(int overlayId, Set<Container<NatedAddress, C>> publicSample, Set<Container<NatedAddress, C>> privateSample) {
+        this.overlayId = overlayId;
+        this.publicSample = publicSample;
+        this.privateSample = privateSample;
+    }
 
-	
+    @Override
+    public String toString() {
+        return "SAMPLE";
+    }
 }

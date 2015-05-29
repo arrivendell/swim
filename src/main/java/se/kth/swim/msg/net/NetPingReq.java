@@ -1,27 +1,27 @@
 package se.kth.swim.msg.net;
 
-import se.kth.swim.msg.Ping;
+import se.kth.swim.msg.PingSwim;
 import se.sics.kompics.network.Header;
 import se.sics.p2ptoolbox.util.network.NatedAddress;
 
-public class NetPingReq extends NetMsg<Ping>  {
+public class NetPingReq extends NetMsg<PingSwim>  {
 	
 	public NatedAddress getNodeToPing(){
 		return getContent().nodeToPing;
 	}
 	
-    public NetPingReq(NatedAddress src, NatedAddress dst) {
-        super(src, dst, new Ping(null));
+    public NetPingReq(NatedAddress src, NatedAddress dst, int incarn) {
+        super(src, dst, new PingSwim(null, incarn));
     }
 
-    private NetPingReq(Header<NatedAddress> header, Ping content) {
+    private NetPingReq(Header<NatedAddress> header, PingSwim content) {
         super(header, content);
     }
-    public NetPingReq(NatedAddress src, NatedAddress dst, NatedAddress toPing) {
-        super(src, dst, new Ping(toPing));
+    public NetPingReq(NatedAddress src, NatedAddress dst, NatedAddress toPing, int incarn) {
+        super(src, dst, new PingSwim(toPing, incarn));
     }
 
-    private NetPingReq(Header<NatedAddress> header, Ping content, NatedAddress toPing) {
+    private NetPingReq(Header<NatedAddress> header, PingSwim content, NatedAddress toPing) {
         super(header, content);
     }
 

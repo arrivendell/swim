@@ -17,15 +17,39 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 
-package se.kth.swim.msg;
+package se.kth.swim.croupier.util;
 
+import se.sics.kompics.network.Address;
+import se.sics.kompics.network.Transport;
 import se.sics.p2ptoolbox.util.network.NatedAddress;
+import se.sics.p2ptoolbox.util.network.OverlayHeader;
+import se.sics.p2ptoolbox.util.network.impl.BasicHeader;
 
 /**
  * @author Alex Ormenisan <aaor@sics.se>
  */
-public class Ping {
+public class OverlayHeaderImpl<Adr extends Address> implements OverlayHeader<Adr> {
+    private final BasicHeader<Adr> base;
+    private final int overlayId;
+    
+    public OverlayHeaderImpl(BasicHeader<Adr> base, int overlayId) {
+        this.base = base;
+        this.overlayId = overlayId;
+    }
+    
+    public int getOverlayId() {
+        return overlayId;
+    }
 
+    public Adr getSource() {
+        return base.getSource();
+    }
 
-	
+    public Adr getDestination() {
+        return base.getDestination();
+    }
+
+    public Transport getProtocol() {
+        return base.getProtocol();
+    }
 }

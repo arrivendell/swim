@@ -96,14 +96,14 @@ public class SwimScenario {
         Set<Integer> disconnectedNodes;
 
         disconnectedNodes = new HashSet<Integer>();
-        disconnectedNodes.add(17);
-        disconnectedNodes.add(45);
+        disconnectedNodes.add(7);
+        disconnectedNodes.add(5);
         disconnectedNodesSets.put(1, disconnectedNodes);
 
         disconnectedNodes = new HashSet<Integer>();
         disconnectedNodes.add(17);
         disconnectedNodes.add(13);
-        disconnectedNodes.add(101);
+        disconnectedNodes.add(21);
         disconnectedNodesSets.put(2, disconnectedNodes);
     }
 
@@ -213,7 +213,14 @@ public class SwimScenario {
             return new ChangeNetworkModelCmd(compositeNetworkModel);
         }
     };
+    
+    static Operation1<ChangeNetworkModelCmd, Integer> reconnectedNodesNMOp = new Operation1<ChangeNetworkModelCmd, Integer>() {
 
+        public ChangeNetworkModelCmd generate(Integer setIndex) {
+            NetworkModel baseNetworkModel = new UniformRandomModel(50, 500);
+            return new ChangeNetworkModelCmd(baseNetworkModel);
+        }
+    };
     static Operation<SimulationResult> simulationResult = new Operation<SimulationResult>() {
 
         public SimulationResult generate() {
@@ -225,6 +232,7 @@ public class SwimScenario {
             };
         }
     };
+    
 
     //Operations require Distributions as parameters
     //1.ConstantDistribution - this will provide same parameter no matter how many times it is called
@@ -249,7 +257,7 @@ public class SwimScenario {
                     {
                         eventInterArrivalTime(constant(1000));
                         ArrayList<Integer> listInt = new ArrayList<Integer>();
-                        for(int i =0; i< 30; i++){
+                        for(int i =1; i< 10; i++){
                         	
                         	listInt.add(i);
                         }
@@ -260,7 +268,7 @@ public class SwimScenario {
                 StochasticProcess killPeers = new StochasticProcess() {
                     {
                         eventInterArrivalTime(constant(1000));
-                        raise(4, killNodeOp, new GenIntSequentialDistribution(new Integer[]{7,15,19,13}));
+                        raise(2, killNodeOp, new GenIntSequentialDistribution(new Integer[]{7,5}));
                         //raise(1, killNodeOp, new ConstantDistribution(Integer.class, 13));
                     }
                 };
@@ -278,7 +286,13 @@ public class SwimScenario {
                         raise(1, disconnectedNodesNMOp, new ConstantDistribution(Integer.class, 1));
                     }
                 };
-
+                
+                StochasticProcess reconnectedNodes1 = new StochasticProcess() {
+                    {
+                        eventInterArrivalTime(constant(1000));
+                        raise(1, reconnectedNodesNMOp, new ConstantDistribution(Integer.class, 1));
+                    }
+                };
                 StochasticProcess fetchSimulationResult = new StochasticProcess() {
                     {
                         eventInterArrivalTime(constant(1000));
@@ -288,10 +302,10 @@ public class SwimScenario {
 
                 startAggregator.start();
 				startPeers.startAfterTerminationOf(1000, startAggregator);
-				killPeers.startAfterTerminationOf(1000, startPeers);
+//				killPeers.startAfterTerminationOf(1000, startPeers);
 //                deadLinks1.startAfterTerminationOf(10000,startPeers);
-//                disconnectedNodes1.startAfterTerminationOf(1000, startPeers);
-                fetchSimulationResult.startAfterTerminationOf(50000, killPeers);
+                disconnectedNodes1.startAfterTerminationOf(1000, startPeers);
+                fetchSimulationResult.startAfterTerminationOf(30000, disconnectedNodes1);
                 terminateAfterTerminationOf(1000, fetchSimulationResult);
 
             }
