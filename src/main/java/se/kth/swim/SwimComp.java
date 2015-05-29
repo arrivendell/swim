@@ -72,7 +72,7 @@ public class SwimComp extends ComponentDefinition {
 	private static int TIME_OUT = 10;
 	private static int PING_MAX = 10;
 	private static int DELAY_PONG = 1000;
-	private static int DELAY_INDIRECT_PING = 500;
+	private static int DELAY_INDIRECT_PING = 1000;
 	private static int DELAY_SUSPECTED = 2000;
 	private static int K_INDIRECT_PING = 10;
 	private enum enumStatus {ALIVE, SUSPECT, DEAD;};
@@ -289,7 +289,7 @@ public class SwimComp extends ComponentDefinition {
         	Set<NatedAddress> tempSet = new HashSet<NatedAddress>(aliveNodes);
         	NatedAddress nodeReceived = pingedNodes.get(event.getTimeoutId());
         	tempSet.remove(nodeReceived);
-            //log.info("{} pong timeout, sending indirect  ping for :{}", new Object[]{selfAddress.getId(), nodeReceived.getId()});
+            log.info("{} pong timeout, sending indirect  ping for :{}", new Object[]{selfAddress.getId(), nodeReceived.getId()});
             for(int j = 0; j<K_INDIRECT_PING && j<tempSet.size();j++){
             	int indexRandom = randInt(0,tempSet.size()-1);
             	int i = 0;
@@ -298,7 +298,7 @@ public class SwimComp extends ComponentDefinition {
                 for (NatedAddress partnerAddress : tempSet) {
                 	if (i == indexRandom) {
                 		itemToRemove = partnerAddress;
-                		//log.info("{} sending indirect ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
+                		log.info("{} sending indirect ping to partner:{}", new Object[]{selfAddress.getId(), partnerAddress});
     	                trigger(new NetPingReq(selfAddress, partnerAddress, nodeReceived, incarnationMap.get(selfAddress)), network);
     	                break;
                 	}
@@ -482,29 +482,32 @@ public class SwimComp extends ComponentDefinition {
         java.util.Iterator<NodeAndCounter> it = newAlive.iterator();
         while(it.hasNext()){
         	NodeAndCounter temp = it.next();
-        	if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
-        		recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
-            	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
-            	recentAliveNodes.add(new NodeAndCounter(temp.getNode(), 0));
-            	//Can start propagate alive message
-            	aliveNodes.add(temp.getNode());
-            	incarnationMap.put(temp.getNode(), temp.getCounter());
-        	}
-        	else if(aliveNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode())){
-        		if (temp.getNode() != selfAddress && !deadNodes.contains(temp.getNode())){
+        	if(selfAddress != temp.getNode()){
+        		if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
             		recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
                 	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
                 	recentAliveNodes.add(new NodeAndCounter(temp.getNode(), 0));
                 	//Can start propagate alive message
                 	aliveNodes.add(temp.getNode());
+                	incarnationMap.put(temp.getNode(), temp.getCounter());
             	}
-            	if(recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0))){
-            		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+            	else if(aliveNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode())){
+            		if (temp.getNode() != selfAddress && !deadNodes.contains(temp.getNode())){
+                		recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+                    	//recentDeadNodes.remove(new NodeAndCounter(temp, 0));
+                    	recentAliveNodes.add(new NodeAndCounter(temp.getNode(), 0));
+                    	//Can start propagate alive message
+                    	aliveNodes.add(temp.getNode());
+                	}
+                	if(recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0))){
+                		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+                	}
+                	if(suspectedNodes.remove(temp.getNode())){	
+                		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
+                	}
+                	incarnationMap.put(temp.getNode(), temp.getCounter());
             	}
-            	if(suspectedNodes.remove(temp.getNode())){	
-            		stopTimer(timerToSuspectedNodes, temp.getNode().getId());
-            	}
-            	incarnationMap.put(temp.getNode(), temp.getCounter());
+            	
         	}
         	
         }
@@ -512,32 +515,34 @@ public class SwimComp extends ComponentDefinition {
         it = newSuspect.iterator();
         while(it.hasNext()){
         	NodeAndCounter temp = it.next();
-
-        	if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
-        		//add it to the "fresh" list
-            	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
-            	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
-            	launchTimeOutSuspect(temp.getNode());
-            	//add it to the permanent list
-            	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
-            	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
-            	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
-            	suspectedNodes.add(temp.getNode());
-            	incarnationMap.put(temp.getNode(), temp.getCounter());
-        	}
-        	else if (suspectedNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode()) || (!suspectedNodes.contains(temp.getNode()) && aliveNodes.contains(temp.getNode()) && temp.getCounter() >= incarnationMap.get(temp.getNode()))){
-        		if (temp.getNode() != selfAddress &&!deadNodes.contains(temp.getNode())){
-            		//add it to the "fresh" list
-                	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
-                	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
-                	launchTimeOutSuspect(temp.getNode());
-                	//add it to the permanent list
-                	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
-                	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
-                	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
-                	suspectedNodes.add(temp.getNode());
-                	incarnationMap.put(temp.getNode(), temp.getCounter());
-            	}
+        	if(selfAddress != temp.getNode()){
+	            	
+	        	if(!aliveNodes.contains(temp.getNode()) && !deadNodes.contains(temp.getNode())){
+	        		//add it to the "fresh" list
+	            	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+	            	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
+	            	launchTimeOutSuspect(temp.getNode());
+	            	//add it to the permanent list
+	            	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+	            	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
+	            	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
+	            	suspectedNodes.add(temp.getNode());
+	            	incarnationMap.put(temp.getNode(), temp.getCounter());
+	        	}
+	        	else if (suspectedNodes.contains(temp.getNode())&& temp.getCounter() > incarnationMap.get(temp.getNode()) || (!suspectedNodes.contains(temp.getNode()) && aliveNodes.contains(temp.getNode()) && temp.getCounter() >= incarnationMap.get(temp.getNode()))){
+	        		if (temp.getNode() != selfAddress &&!deadNodes.contains(temp.getNode())){
+	            		//add it to the "fresh" list
+	                	recentSuspectedNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+	                	recentSuspectedNodes.add(new NodeAndCounter(temp.getNode(), 0));
+	                	launchTimeOutSuspect(temp.getNode());
+	                	//add it to the permanent list
+	                	recentAliveNodes.remove(new NodeAndCounter(temp.getNode(), 0));
+	                	//log.info("{} receive suspicion of:{}", new Object[]{selfAddress.getId(), temp.getId()});
+	                	aliveNodes.add(temp.getNode()); // Add it here to try to ping it after
+	                	suspectedNodes.add(temp.getNode());
+	                	incarnationMap.put(temp.getNode(), temp.getCounter());
+	            	}
+	        	}
         	}
         	if (temp.getNode() == selfAddress){
         		incarnationMap.put(selfAddress, incarnationMap.get(selfAddress) + 1);

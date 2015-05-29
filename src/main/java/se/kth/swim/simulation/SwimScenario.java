@@ -98,6 +98,12 @@ public class SwimScenario {
         disconnectedNodes = new HashSet<Integer>();
         disconnectedNodes.add(7);
         disconnectedNodes.add(5);
+        disconnectedNodes.add(25);
+        disconnectedNodes.add(19);
+        disconnectedNodes.add(63);
+        disconnectedNodes.add(35);
+        disconnectedNodes.add(21);
+        disconnectedNodes.add(87);
         disconnectedNodesSets.put(1, disconnectedNodes);
 
         disconnectedNodes = new HashSet<Integer>();
@@ -257,7 +263,7 @@ public class SwimScenario {
                     {
                         eventInterArrivalTime(constant(1000));
                         ArrayList<Integer> listInt = new ArrayList<Integer>();
-                        for(int i =1; i< 10; i++){
+                        for(int i =0; i< 100; i++){
                         	
                         	listInt.add(i);
                         }
