@@ -43,13 +43,16 @@ public class AggregatorComp extends ComponentDefinition {
     private static final Logger log = LoggerFactory.getLogger(AggregatorComp.class);
     private Positive<Network> network = requires(Network.class);
     private Positive<Timer> timer = requires(Timer.class);
+    
+	private int cycle;
+
 
     private final NatedAddress selfAddress;
 
     public AggregatorComp(AggregatorInit init) {
         this.selfAddress = init.selfAddress;
         log.info("{} initiating...", new Object[]{selfAddress.getId()});
-
+        this.cycle = 0;
         subscribe(handleStart, control);
         subscribe(handleStop, control);
         subscribe(handleStatus, network);
@@ -76,7 +79,8 @@ public class AggregatorComp extends ComponentDefinition {
 
         @Override
         public void handle(NetStatus status) {
-            Set<Integer> setAlive = new HashSet<Integer>() ;
+        	
+        	Set<Integer> setAlive = new HashSet<Integer>() ;
             for(NatedAddress nat : status.getContent().aliveNodes){
             	setAlive.add(nat.getId());
             }
@@ -88,8 +92,13 @@ public class AggregatorComp extends ComponentDefinition {
             for(NatedAddress nat : status.getContent().deadNodes){
             	setDead.add(nat.getId());
             }
-           log.info("{} status from:{} pings:{} aliveNodes :  suspected nodes : {}, deadNodes : {}", 
-                    new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, /*setAlive,*/ setSuspected, setDead});
+            if(status.getHeader().getSource().getId() == 0){
+        		cycle++;
+            	log.info("CYCLE NUMBER has been incremented: {}, size alive : {}, size dead : {} ", new Object[]{cycle, setAlive.size(), setDead.size()});
+        	}
+            
+//           log.info("{} status from:{} pings:{} aliveNodes :  suspected nodes : {}, deadNodes : {}", 
+//                    new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, /*setAlive,*/ setSuspected, setDead});
         }
     };
 
