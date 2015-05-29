@@ -45,6 +45,7 @@ public class AggregatorComp extends ComponentDefinition {
     private Positive<Timer> timer = requires(Timer.class);
     
 	private int cycle;
+	private int nodeWithRightInformation;
 
 
     private final NatedAddress selfAddress;
@@ -93,9 +94,19 @@ public class AggregatorComp extends ComponentDefinition {
             	setDead.add(nat.getId());
             }
             if(status.getHeader().getSource().getId() == 0){
-        		cycle++;
-            	log.info("CYCLE NUMBER has been incremented: {}, size alive : {}, size dead : {} ", new Object[]{cycle, setAlive.size(), setDead.size()});
-        	}
+            	if (setAlive.size() == 7 && setDead.size() == 2){
+            		nodeWithRightInformation++;
+            	}
+            		
+        		cycle++; 
+        		//DEBUG LOG
+        		log.info("CYCLE NUMBER has been incremented: {}, size alive : {}, size dead : {}, node with right information : {}", new Object[]{cycle, setAlive.size(), setDead.size(), nodeWithRightInformation});
+        		
+        		if(nodeWithRightInformation == 10){
+            		log.info("FINAL LOG, CONVERGE DONE cycles required : {}, size alive : {}, size dead : {}, node with right information : {}", new Object[]{cycle, setAlive.size(), setDead.size(), nodeWithRightInformation});
+
+        		}
+            }
             
 //           log.info("{} status from:{} pings:{} aliveNodes :  suspected nodes : {}, deadNodes : {}", 
 //                    new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, /*setAlive,*/ setSuspected, setDead});
