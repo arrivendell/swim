@@ -192,7 +192,7 @@ public class SwimComp extends ComponentDefinition {
     	@Override 
     	public void handle(NetPingReq event){
     		indirectToPingNodes.put(event.getNodeToPing(), event.getSource());
-    		 log.info("{} sending ping for ind ping to partner:{}", new Object[]{selfAddress.getId(), event.getNodeToPing()});
+    		 //log.info("{} sending ping for ind ping to partner:{}", new Object[]{selfAddress.getId(), event.getNodeToPing()});
              trigger(new NetPing(selfAddress, event.getNodeToPing()), network);
     	}
     };
@@ -204,7 +204,7 @@ public class SwimComp extends ComponentDefinition {
         public void handle(PiggyPong event) {
         	//if received answer to relay
         	if(indirectToPingNodes.keySet().contains(event.getSource())){
-        		log.info("{} received pong for ind pong from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
+        		//log.info("{} received pong for ind pong from:{}", new Object[]{selfAddress.getId(), event.getHeader().getSource()});
             	trigger(new PiggyPongReq(selfAddress, indirectToPingNodes.get(event.getSource()), event.getAliveNodes(), event.getSuspNodes(), event.getDeadNodes(),event.getSource()), network);
             	indirectToPingNodes.remove(event.getSource());
             	stopTimer(indirectPingedNodes, event.getSource().getId());
@@ -220,8 +220,8 @@ public class SwimComp extends ComponentDefinition {
                 stopTimer(pingedNodes, event.getSource().getId());
                 stopTimer(indirectPingedNodes, event.getSource().getId());
                 mergeUpdateLists(event.getAliveNodes(), event.getSuspNodes(), event.getDeadNodes());
-            	suspectedNodes.remove(event.getSource());
-            	recentSuspectedNodes.remove(new NodeAndCounter(event.getHeader().getSource(),0));	
+            	//suspectedNodes.remove(event.getSource());
+            //	recentSuspectedNodes.remove(new NodeAndCounter(event.getHeader().getSource(),0));	
         	}
             
         }

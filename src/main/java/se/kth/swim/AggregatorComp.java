@@ -88,7 +88,7 @@ public class AggregatorComp extends ComponentDefinition {
             for(NatedAddress nat : status.getContent().deadNodes){
             	setDead.add(nat.getId());
             }
-            log.info("{} status from:{} pings:{} aliveNodes :  suspected nodes : {}, deadNodes : {}", 
+           log.info("{} status from:{} pings:{} aliveNodes :  suspected nodes : {}, deadNodes : {}", 
                     new Object[]{selfAddress.getId(), status.getHeader().getSource(), status.getContent().receivedPings, /*setAlive,*/ setSuspected, setDead});
         }
     };

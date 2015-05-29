@@ -31,6 +31,7 @@ import org.javatuples.Pair;
 
 import se.kth.swim.AggregatorComp;
 import se.kth.swim.HostComp;
+import se.kth.swim.croupier.CroupierConfig;
 import se.sics.kompics.network.Address;
 import se.sics.p2ptoolbox.simulator.cmd.OperationCmd;
 import se.sics.p2ptoolbox.simulator.cmd.impl.ChangeNetworkModelCmd;
@@ -59,6 +60,8 @@ public class SwimScenario {
 
     private static long seed;
     private static InetAddress localHost;
+    
+    private static CroupierConfig croupierConfig = new CroupierConfig(10, 5, 2000, 1000); 
 
     static {
         try {
@@ -150,7 +153,7 @@ public class SwimScenario {
                      * generators with same seed else they might behave the same
                      */
                     long nodeSeed = seed + nodeId;
-                    return new HostComp.HostInit(nodeAddress, bootstrapNodes, aggregatorServer, nodeSeed);
+                    return new HostComp.HostInit(nodeAddress, bootstrapNodes, aggregatorServer, nodeSeed, croupierConfig);
                 }
 
                 public Integer getNodeId() {
@@ -246,7 +249,7 @@ public class SwimScenario {
                     {
                         eventInterArrivalTime(constant(1000));
                         ArrayList<Integer> listInt = new ArrayList<Integer>();
-                        for(int i =0; i< 20; i++){
+                        for(int i =0; i< 30; i++){
                         	
                         	listInt.add(i);
                         }
